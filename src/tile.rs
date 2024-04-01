@@ -1,7 +1,7 @@
+use quick_xml::events::attributes::Attributes;
 use std::{collections::HashMap, path::Path};
 
-use xml::attribute::OwnedAttribute;
-
+use crate::util::parse_cow;
 use crate::{
     animation::{parse_animation, Frame},
     error::Error,
@@ -60,19 +60,19 @@ impl<'tileset> std::ops::Deref for Tile<'tileset> {
 }
 
 impl TileData {
-    pub(crate) fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: Vec<OwnedAttribute>,
+    pub(crate) fn new<'a>(
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
+        attrs: Attributes,
         path_relative_to: &Path,
         reader: &mut impl ResourceReader,
         cache: &mut impl ResourceCache,
     ) -> Result<(TileId, TileData)> {
         let ((user_type, user_class, probability), id) = get_attrs!(
             for v in attrs {
-                Some("type") => user_type ?= v.parse(),
-                Some("class") => user_class ?= v.parse(),
-                Some("probability") => probability ?= v.parse(),
-                "id" => id ?= v.parse::<u32>(),
+                Some("type") => user_type ?= parse_cow(&v),
+                Some("class") => user_class ?= parse_cow(&v),
+                Some("probability") => probability ?= parse_cow(&v),
+                "id" => id ?= parse_cow::<u32>(&v),
             }
             ((user_type, user_class, probability), id)
         );

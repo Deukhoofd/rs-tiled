@@ -15,8 +15,8 @@ pub struct GroupLayerData {
 }
 
 impl GroupLayerData {
-    pub(crate) fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
+    pub(crate) fn new<'a>(
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
         infinite: bool,
         map_path: &Path,
         tilesets: &[MapTilesetGid],

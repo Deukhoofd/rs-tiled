@@ -1,6 +1,5 @@
+use quick_xml::events::attributes::Attributes;
 use std::path::{Path, PathBuf};
-
-use xml::attribute::OwnedAttribute;
 
 use crate::{
     error::{Error, Result},
@@ -68,17 +67,17 @@ pub struct Image {
 }
 
 impl Image {
-    pub(crate) fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: Vec<OwnedAttribute>,
+    pub(crate) fn new<'a>(
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
+        attrs: Attributes,
         path_relative_to: impl AsRef<Path>,
     ) -> Result<Image> {
         let (c, (s, w, h)) = get_attrs!(
             for v in attrs {
-                Some("trans") => trans ?= v.parse(),
-                "source" => source = v,
-                "width" => width ?= v.parse::<i32>(),
-                "height" => height ?= v.parse::<i32>(),
+                Some("trans") => trans ?= parse_cow::<Color>(&v),
+                "source" => source = to_owned_str(&v)?,
+                "width" => width ?= parse_cow(&v),
+                "height" => height ?= parse_cow(&v),
             }
             (trans, (source, width, height))
         );

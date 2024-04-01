@@ -1,7 +1,7 @@
+use quick_xml::events::attributes::Attributes;
 use std::collections::HashMap;
 
-use xml::attribute::OwnedAttribute;
-
+use crate::util::{parse_cow, to_owned_str};
 use crate::{
     util::{floor_div, get_attrs, map_wrapper, parse_tag, XmlEventResult},
     Error, LayerTile, LayerTileData, MapTilesetGid, Result,
@@ -22,15 +22,15 @@ impl std::fmt::Debug for InfiniteTileLayerData {
 }
 
 impl InfiniteTileLayerData {
-    pub(crate) fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: Vec<OwnedAttribute>,
+    pub(crate) fn new<'a>(
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
+        attrs: Attributes,
         tilesets: &[MapTilesetGid],
     ) -> Result<Self> {
         let (e, c) = get_attrs!(
             for v in attrs {
-                Some("encoding") => encoding = v,
-                Some("compression") => compression = v,
+                Some("encoding") => encoding = to_owned_str(&v)?,
+                Some("compression") => compression = to_owned_str(&v)?,
             }
             (encoding, compression)
         );
@@ -180,24 +180,25 @@ struct InternalChunk {
 }
 
 impl InternalChunk {
-    pub(crate) fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: Vec<OwnedAttribute>,
+    pub(crate) fn new<'a>(
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
+        attrs: Attributes,
         encoding: Option<String>,
         compression: Option<String>,
         tilesets: &[MapTilesetGid],
     ) -> Result<Self> {
         let (x, y, width, height) = get_attrs!(
             for v in attrs {
-                "x" => x ?= v.parse::<i32>(),
-                "y" => y ?= v.parse::<i32>(),
-                "width" => width ?= v.parse::<u32>(),
-                "height" => height ?= v.parse::<u32>(),
+                "x" => x ?= parse_cow(&v),
+                "y" => y ?= parse_cow(&v),
+                "width" => width ?= parse_cow(&v),
+                "height" => height ?= parse_cow(&v),
             }
             (x, y, width, height)
         );
 
-        let tiles = parse_data_line(encoding, compression, parser, tilesets)?;
+        let size = (width * height) as usize;
+        let tiles = parse_data_line(encoding, compression, parser, tilesets, size)?;
 
         Ok(InternalChunk {
             x,

@@ -1,7 +1,7 @@
+use quick_xml::events::attributes::Attributes;
 use std::{collections::HashMap, path::Path, sync::Arc};
 
-use xml::attribute::OwnedAttribute;
-
+use crate::util::parse_cow;
 use crate::{
     parse_properties,
     util::{get_attrs, map_wrapper, parse_tag, XmlEventResult},
@@ -20,9 +20,9 @@ pub struct ObjectLayerData {
 impl ObjectLayerData {
     /// If it is known that there are no objects with tile images in it (i.e. collision data)
     /// then we can pass in [`None`] as the tilesets
-    pub(crate) fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: Vec<OwnedAttribute>,
+    pub(crate) fn new<'a>(
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
+        attrs: Attributes,
         tilesets: Option<&[MapTilesetGid]>,
         for_tileset: Option<Arc<Tileset>>,
         // path_relative_to is a directory to which all other files are relative to
@@ -32,7 +32,7 @@ impl ObjectLayerData {
     ) -> Result<(ObjectLayerData, Properties)> {
         let c = get_attrs!(
             for v in attrs {
-                Some("color") => color ?= v.parse(),
+                Some("color") => color ?= parse_cow(&v),
             }
             color
         );

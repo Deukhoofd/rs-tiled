@@ -1,6 +1,5 @@
+use quick_xml::events::attributes::Attributes;
 use std::{path::Path, sync::Arc};
-
-use xml::attribute::OwnedAttribute;
 
 use crate::{
     error::Result, properties::Properties, util::*, Color, Map, MapTilesetGid, ResourceCache,
@@ -67,9 +66,9 @@ impl LayerData {
         self.id
     }
 
-    pub(crate) fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: Vec<OwnedAttribute>,
+    pub(crate) fn new<'a>(
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
+        attrs: Attributes,
         tag: LayerTag,
         infinite: bool,
         map_path: &Path,
@@ -78,6 +77,7 @@ impl LayerData {
         reader: &mut impl ResourceReader,
         cache: &mut impl ResourceCache,
     ) -> Result<Self> {
+        let a = attrs.clone();
         let (
             opacity,
             tint_color,
@@ -91,25 +91,26 @@ impl LayerData {
             user_type,
             user_class,
         ) = get_attrs!(
-            for v in attrs {
-                Some("opacity") => opacity ?= v.parse(),
-                Some("tintcolor") => tint_color ?= v.parse(),
-                Some("visible") => visible ?= v.parse().map(|x:i32| x == 1),
-                Some("offsetx") => offset_x ?= v.parse(),
-                Some("offsety") => offset_y ?= v.parse(),
-                Some("parallaxx") => parallax_x ?= v.parse(),
-                Some("parallaxy") => parallax_y ?= v.parse(),
-                Some("name") => name = v,
-                Some("id") => id ?= v.parse(),
-                Some("type") => user_type ?= v.parse(),
-                Some("class") => user_class ?= v.parse(),
+            for v in a {
+                Some("opacity") => opacity ?= parse_cow(&v),
+                Some("tintcolor") => tint_color ?= parse_cow(&v),
+                Some("visible") => visible ?= parse_cow(&v).map(|v: i32| v == 1),
+                Some("offsetx") => offset_x ?= parse_cow(&v),
+                Some("offsety") => offset_y ?= parse_cow(&v),
+                Some("parallaxx") => parallax_x ?= parse_cow(&v),
+                Some("parallaxy") => parallax_y ?= parse_cow(&v),
+                Some("name") => name ?= to_owned_str(&v),
+                Some("id") => id ?= parse_cow(&v),
+                Some("type") => user_type ?= to_owned_str(&v),
+                Some("class") => user_class ?= to_owned_str(&v),
             }
             (opacity, tint_color, visible, offset_x, offset_y, parallax_x, parallax_y, name, id, user_type, user_class)
         );
 
         let (ty, properties) = match tag {
             LayerTag::Tiles => {
-                let (ty, properties) = TileLayerData::new(parser, attrs, infinite, tilesets)?;
+                let (ty, properties) =
+                    TileLayerData::new(parser, attrs.clone(), infinite, tilesets)?;
                 (LayerDataType::Tiles(ty), properties)
             }
             LayerTag::Objects => {

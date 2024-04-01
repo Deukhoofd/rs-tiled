@@ -1,6 +1,5 @@
+use quick_xml::events::attributes::Attributes;
 use std::collections::HashMap;
-
-use xml::attribute::OwnedAttribute;
 
 use crate::{
     parse_properties,
@@ -12,6 +11,7 @@ mod finite;
 mod infinite;
 mod util;
 
+use crate::util::parse_cow;
 pub use finite::*;
 pub use infinite::*;
 
@@ -94,16 +94,16 @@ pub(crate) enum TileLayerData {
 }
 
 impl TileLayerData {
-    pub(crate) fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: Vec<OwnedAttribute>,
+    pub(crate) fn new<'a>(
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
+        attrs: Attributes,
         infinite: bool,
         tilesets: &[MapTilesetGid],
     ) -> Result<(Self, Properties)> {
         let (width, height) = get_attrs!(
             for v in attrs {
-                "width" => width ?= v.parse::<u32>(),
-                "height" => height ?= v.parse::<u32>(),
+                "width" => width ?= parse_cow(&v),
+                "height" => height ?= parse_cow(&v),
             }
             (width, height)
         );

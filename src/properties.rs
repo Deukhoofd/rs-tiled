@@ -1,7 +1,8 @@
+use quick_xml::events::attributes::Attributes;
+use quick_xml::events::Event;
 use std::{collections::HashMap, str::FromStr};
 
-use xml::{attribute::OwnedAttribute, reader::XmlEvent};
-
+use crate::util::to_owned_str;
 use crate::{
     error::{Error, Result},
     util::{get_attrs, parse_tag, XmlEventResult},
@@ -18,7 +19,7 @@ pub struct Color {
 }
 
 impl FromStr for Color {
-    type Err = ();
+    type Err = crate::Error;
 
     fn from_str(s: &str) -> std::result::Result<Color, Self::Err> {
         let s = if let Some(stripped) = s.strip_prefix('#') {
@@ -38,7 +39,9 @@ impl FromStr for Color {
                         green,
                         blue,
                     }),
-                    _ => Err(()),
+                    _ => Err(crate::Error::InvalidPropertyValue {
+                        description: "Couldn't parse color".to_string(),
+                    }),
                 }
             }
             8 => {
@@ -53,10 +56,14 @@ impl FromStr for Color {
                         green,
                         blue,
                     }),
-                    _ => Err(()),
+                    _ => Err(crate::Error::InvalidPropertyValue {
+                        description: "Couldn't parse color".to_string(),
+                    }),
                 }
             }
-            _ => Err(()),
+            _ => Err(crate::Error::InvalidPropertyValue {
+                description: "Couldn't parse color".to_string(),
+            }),
         }
     }
 }
@@ -137,18 +144,18 @@ impl PropertyValue {
 /// A custom property container.
 pub type Properties = HashMap<String, PropertyValue>;
 
-pub(crate) fn parse_properties(
-    parser: &mut impl Iterator<Item = XmlEventResult>,
+pub(crate) fn parse_properties<'a>(
+    parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
 ) -> Result<Properties> {
     let mut p = HashMap::new();
     parse_tag!(parser, "properties", {
-        "property" => |attrs:Vec<OwnedAttribute>| {
+        "property" => |attrs: Attributes| {
             let (t, v_attr, k, p_t) = get_attrs!(
                 for attr in attrs {
-                    Some("type") => obj_type = attr,
-                    Some("value") => value = attr,
-                    Some("propertytype") => propertytype = attr,
-                    "name" => name = attr
+                    Some("type") => obj_type ?= to_owned_str(&attr),
+                    Some("value") => value ?= to_owned_str(&attr),
+                    Some("propertytype") => propertytype ?= to_owned_str(&attr),
+                    "name" => name ?= to_owned_str(&attr)
                 }
                 (obj_type, value, name, propertytype)
             );
@@ -174,7 +181,7 @@ pub(crate) fn parse_properties(
                 None => {
                     // if the "value" attribute was missing, might be a multiline string
                     match parser.next() {
-                        Some(Ok(XmlEvent::Characters(s))) => Ok(s),
+                        Some(Ok(Event::Text(s))) => Ok(String::from_utf8_lossy(s.as_ref()).to_string()),
                         Some(Err(err)) => Err(Error::XmlDecodingError(err)),
                         None => unreachable!(), // EndDocument or error must come first
                         _ => Err(Error::MalformedAttributes(format!("property '{}' is missing a value", k))),
@@ -190,16 +197,15 @@ pub(crate) fn parse_properties(
 }
 
 /// Checks if there is a properties tag next in the parser. Will consume any whitespace or comments.
-fn has_properties_tag_next(parser: &mut impl Iterator<Item = XmlEventResult>) -> bool {
+fn has_properties_tag_next<'a>(parser: &mut impl Iterator<Item = XmlEventResult<'a>>) -> bool {
     let mut peekable = parser.by_ref().peekable();
     while let Some(Ok(next)) = peekable.peek() {
         match next {
-            XmlEvent::StartElement { name, .. } if name.local_name == "properties" => return true,
-            // Ignore whitespace and comments
-            XmlEvent::Whitespace(_) => {
-                peekable.next();
+            Event::Start(e) if e.name().local_name().as_ref() == "properties".as_bytes() => {
+                return true
             }
-            XmlEvent::Comment(_) => {
+            // Ignore whitespace and comments
+            Event::Comment(_) => {
                 peekable.next();
             }
             // If we encounter anything else than whitespace, comments or the properties tag, we

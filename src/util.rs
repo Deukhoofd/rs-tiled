@@ -78,9 +78,11 @@ macro_rules! get_attrs {
         {
             $crate::util::let_attr_branches!($($branches)*);
 
-            for attr in $attrs.iter() {
-                let $attr = attr.value.clone();
-                $crate::util::process_attr_branches!(attr; $($branches)*);
+            for attr in $attrs {
+                if let Ok(attr) = attr {
+                    let $attr = attr.value.clone();
+                    $crate::util::process_attr_branches!(attr; $($branches)*);
+                }
             }
 
             $crate::util::handle_attr_branches!($($branches)*);
@@ -105,12 +107,13 @@ macro_rules! let_attr_branches {
 }
 
 pub(crate) use let_attr_branches;
+use std::str::FromStr;
 
 macro_rules! process_attr_branches {
     ($attr:ident; ) => {};
 
     ($attr:ident; Some($attr_pat_opt:literal) => $opt_var:ident = $opt_expr:expr $(, $($tail:tt)*)?) => {
-        if(&$attr.name.local_name == $attr_pat_opt) {
+        if($attr.key.local_name().as_ref() == $attr_pat_opt.as_bytes()) {
             $opt_var = Some($opt_expr);
         }
         else {
@@ -119,7 +122,7 @@ macro_rules! process_attr_branches {
     };
 
     ($attr:ident; Some($attr_pat_opt:literal) => $opt_var:ident ?= $opt_expr:expr $(, $($tail:tt)*)?) => {
-        if(&$attr.name.local_name == $attr_pat_opt) {
+        if($attr.key.local_name().as_ref() == $attr_pat_opt.as_bytes()) {
             $opt_var = Some($opt_expr.map_err(|_|
                 $crate::Error::MalformedAttributes(
                     concat!("Error parsing optional attribute '", $attr_pat_opt, "'").to_owned()
@@ -132,7 +135,7 @@ macro_rules! process_attr_branches {
     };
 
     ($attr:ident; $attr_pat_opt:literal => $opt_var:ident = $opt_expr:expr $(, $($tail:tt)*)?) => {
-        if(&$attr.name.local_name == $attr_pat_opt) {
+        if($attr.key.local_name().as_ref() == $attr_pat_opt.as_bytes()) {
             $opt_var = Some($opt_expr);
         }
         else {
@@ -141,7 +144,7 @@ macro_rules! process_attr_branches {
     };
 
     ($attr:ident; $attr_pat_opt:literal => $opt_var:ident ?= $opt_expr:expr $(, $($tail:tt)*)?) => {
-        if(&$attr.name.local_name == $attr_pat_opt) {
+        if($attr.key.local_name().as_ref() == $attr_pat_opt.as_bytes()) {
             $opt_var = Some($opt_expr.map_err(|_|
                 $crate::Error::MalformedAttributes(
                     concat!("Error parsing attribute '", $attr_pat_opt, "'").to_owned()
@@ -185,16 +188,16 @@ macro_rules! parse_tag {
             match next.map_err(Error::XmlDecodingError)? {
                 #[allow(unused_variables)]
                 $(
-                    xml::reader::XmlEvent::StartElement {name, attributes, ..}
-                        if name.local_name == $open_tag => $open_method(attributes)?,
+                    quick_xml::events::Event::Start (e)
+                        if e.name().local_name().as_ref() == $open_tag.as_bytes() => $open_method(e.attributes())?,
                 )*
 
 
-                xml::reader::XmlEvent::EndElement {name, ..} => if name.local_name == $close_tag {
+                quick_xml::events::Event::End(e) => if e.name().local_name().as_ref() == $close_tag.as_bytes() {
                     break;
                 }
 
-                xml::reader::XmlEvent::EndDocument => {
+                quick_xml::events::Event::Eof => {
                     return Err(Error::PrematureEnd("Document ended before we expected.".to_string()));
                 }
                 _ => {}
@@ -241,9 +244,9 @@ pub(crate) use get_attrs;
 pub(crate) use map_wrapper;
 pub(crate) use parse_tag;
 
-use crate::{Gid, MapTilesetGid};
+use crate::{Error, Gid, MapTilesetGid};
 
-pub(crate) type XmlEventResult = xml::reader::Result<xml::reader::XmlEvent>;
+pub(crate) type XmlEventResult<'a> = quick_xml::Result<quick_xml::events::Event<'a>>;
 
 /// Returns both the tileset and its index
 pub(crate) fn get_tileset_for_gid(
@@ -266,4 +269,23 @@ pub fn floor_div(a: i32, b: i32) -> i32 {
     } else {
         d - ((a < 0) ^ (b < 0)) as i32
     }
+}
+
+pub fn parse_cow<T>(v: &std::borrow::Cow<'_, [u8]>) -> crate::Result<T>
+where
+    T: FromStr,
+    <T as FromStr>::Err: std::fmt::Display,
+{
+    std::str::from_utf8(v.as_ref())
+        .map_err(|_| Error::MalformedAttributes("Error parsing".to_owned()))
+        .and_then(|s| {
+            s.parse()
+                .map_err(|_| Error::MalformedAttributes("".to_string()))
+        })
+}
+
+pub fn to_owned_str(v: &std::borrow::Cow<'_, [u8]>) -> crate::Result<String> {
+    std::str::from_utf8(v.as_ref())
+        .map_err(|_| Error::MalformedAttributes("Error parsing string".to_owned()))
+        .map(|s| s.to_owned())
 }

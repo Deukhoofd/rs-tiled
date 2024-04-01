@@ -1,7 +1,8 @@
+use quick_xml::events::attributes::Attributes;
+use std::borrow::Cow;
 use std::{collections::HashMap, path::Path, sync::Arc};
 
-use xml::attribute::OwnedAttribute;
-
+use crate::util::{parse_cow, to_owned_str};
 use crate::{
     error::{Error, Result},
     properties::{parse_properties, Properties},
@@ -219,9 +220,9 @@ impl ObjectData {
 impl ObjectData {
     /// If it is known that the object has no tile images in it (i.e. collision data)
     /// then we can pass in [`None`] as the tilesets
-    pub(crate) fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: Vec<OwnedAttribute>,
+    pub(crate) fn new<'a>(
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
+        attrs: Attributes,
         tilesets: Option<&[MapTilesetGid]>,
         for_tileset: Option<Arc<Tileset>>,
         // Base path is a directory to which all other files are relative to
@@ -231,18 +232,18 @@ impl ObjectData {
     ) -> Result<ObjectData> {
         let (id, tile, mut n, mut t, c, w, h, mut v, mut r, template, x, y) = get_attrs!(
             for v in attrs {
-                Some("id") => id ?= v.parse(),
-                Some("gid") => tile ?= v.parse::<u32>(),
-                Some("name") => name ?= v.parse(),
-                Some("type") => user_type ?= v.parse(),
-                Some("class") => user_class ?= v.parse(),
-                Some("width") => width ?= v.parse(),
-                Some("height") => height ?= v.parse(),
-                Some("visible") => visible ?= v.parse().map(|x:i32| x == 1),
-                Some("rotation") => rotation ?= v.parse(),
-                Some("template") => template ?= v.parse(),
-                Some("x") => x ?= v.parse::<f32>(),
-                Some("y") => y ?= v.parse::<f32>(),
+                Some("id") => id ?= parse_cow(&v),
+                Some("gid") => tile ?= parse_cow::<u32>(&v),
+                Some("name") => name ?= parse_cow(&v),
+                Some("type") => user_type ?= parse_cow(&v),
+                Some("class") => user_class ?= parse_cow(&v),
+                Some("width") => width ?= parse_cow(&v),
+                Some("height") => height ?= parse_cow(&v),
+                Some("visible") => visible ?= parse_cow(&v).map(|x:i32| x == 1),
+                Some("rotation") => rotation ?= parse_cow(&v),
+                Some("template") => template ?= parse_cow(&v),
+                Some("x") => x ?= parse_cow::<f32>(&v),
+                Some("y") => y ?= parse_cow::<f32>(&v),
             }
             (id, tile, name, user_type, user_class, width, height, visible, rotation, template, x, y)
         );
@@ -349,7 +350,7 @@ impl ObjectData {
 }
 
 impl ObjectData {
-    fn new_polyline(attrs: Vec<OwnedAttribute>) -> Result<ObjectShape> {
+    fn new_polyline(attrs: Attributes) -> Result<ObjectShape> {
         let points = get_attrs!(
             for v in attrs {
                 "points" => points ?= ObjectData::parse_points(v),
@@ -359,7 +360,7 @@ impl ObjectData {
         Ok(ObjectShape::Polyline { points })
     }
 
-    fn new_polygon(attrs: Vec<OwnedAttribute>) -> Result<ObjectShape> {
+    fn new_polygon(attrs: Attributes) -> Result<ObjectShape> {
         let points = get_attrs!(
             for v in attrs {
                 "points" => points ?= ObjectData::parse_points(v),
@@ -369,9 +370,9 @@ impl ObjectData {
         Ok(ObjectShape::Polygon { points })
     }
 
-    fn new_text(
-        attrs: Vec<OwnedAttribute>,
-        parser: &mut impl Iterator<Item = XmlEventResult>,
+    fn new_text<'a>(
+        attrs: Attributes,
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
         width: f32,
         height: f32,
     ) -> Result<ObjectShape> {
@@ -389,26 +390,26 @@ impl ObjectData {
             valign,
         ) = get_attrs!(
             for v in attrs {
-                Some("fontfamily") => font_family = v,
-                Some("pixelsize") => pixel_size ?= v.parse(),
-                Some("wrap") => wrap ?= v.parse(),
-                Some("color") => color ?= v.parse(),
-                Some("bold") => bold ?= v.parse(),
-                Some("italic") => italic ?= v.parse(),
-                Some("underline") => underline ?= v.parse(),
-                Some("strikeout") => strikeout ?= v.parse(),
-                Some("kerning") => kerning ?= v.parse::<i32>(),
-                Some("halign") => halign = match v.as_str() {
-                    "left" => HorizontalAlignment::Left,
-                    "center" => HorizontalAlignment::Center,
-                    "right" => HorizontalAlignment::Right,
-                    "justify" => HorizontalAlignment::Justify,
+                Some("fontfamily") => font_family ?= to_owned_str(&v),
+                Some("pixelsize") => pixel_size ?= parse_cow(&v),
+                Some("wrap") => wrap ?= parse_cow(&v),
+                Some("color") => color ?= parse_cow(&v),
+                Some("bold") => bold ?= parse_cow(&v),
+                Some("italic") => italic ?= parse_cow(&v),
+                Some("underline") => underline ?= parse_cow(&v),
+                Some("strikeout") => strikeout ?= parse_cow(&v),
+                Some("kerning") => kerning ?= parse_cow::<i32>(&v),
+                Some("halign") => halign = match v.as_ref() {
+                    b"left" => HorizontalAlignment::Left,
+                    b"center" => HorizontalAlignment::Center,
+                    b"right" => HorizontalAlignment::Right,
+                    b"justify" => HorizontalAlignment::Justify,
                     _ => return Err(Error::MalformedAttributes("`halign` property did not contain a valid value of 'left', 'center', 'right' or 'justify'".to_string()))
                 },
-                Some("valign") => valign = match v.as_str() {
-                    "top" => VerticalAlignment::Top,
-                    "center" => VerticalAlignment::Center,
-                    "bottom" => VerticalAlignment::Bottom,
+                Some("valign") => valign = match v.as_ref() {
+                    b"top" => VerticalAlignment::Top,
+                    b"center" => VerticalAlignment::Center,
+                    b"bottom" => VerticalAlignment::Bottom,
                     _ => return Err(Error::MalformedAttributes(
                         "`halign` property did not contain a valid value of 'top', 'center' or 'bottom'"
                             .to_string(),
@@ -453,9 +454,10 @@ impl ObjectData {
             },
             |r| r.map_err(Error::XmlDecodingError),
         )? {
-            xml::reader::XmlEvent::Characters(contents) => contents,
+            quick_xml::events::Event::Text(contents) => contents,
             _ => panic!("Text attribute contained anything but characters as content"),
         };
+        let contents = String::from_utf8_lossy(contents.as_ref()).to_string();
 
         Ok(ObjectShape::Text {
             font_family,
@@ -475,7 +477,9 @@ impl ObjectData {
         })
     }
 
-    fn parse_points(s: String) -> Result<Vec<(f32, f32)>> {
+    fn parse_points(s: Cow<'_, [u8]>) -> Result<Vec<(f32, f32)>> {
+        let s = std::str::from_utf8(s.as_ref())
+            .map_err(|_| Error::MalformedAttributes("Error parsing polyline points".to_owned()))?;
         let pairs = s.split(' ');
         pairs
             .map(|point| point.split(','))

@@ -1,9 +1,9 @@
-use xml::attribute::OwnedAttribute;
-
+use crate::util::to_owned_str;
 use crate::{
     util::{get_attrs, map_wrapper, XmlEventResult},
     LayerTile, LayerTileData, MapTilesetGid, Result,
 };
+use quick_xml::events::attributes::Attributes;
 
 use super::util::parse_data_line;
 
@@ -38,22 +38,22 @@ impl FiniteTileLayerData {
         self.height
     }
 
-    pub(crate) fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: Vec<OwnedAttribute>,
+    pub(crate) fn new<'a>(
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
+        attrs: Attributes,
         width: u32,
         height: u32,
         tilesets: &[MapTilesetGid],
     ) -> Result<Self> {
         let (e, c) = get_attrs!(
             for v in attrs {
-                Some("encoding") => encoding = v,
-                Some("compression") => compression = v,
+                Some("encoding") => encoding = to_owned_str(&v)?,
+                Some("compression") => compression = to_owned_str(&v)?,
             }
             (encoding, compression)
         );
-
-        let tiles = parse_data_line(e, c, parser, tilesets)?;
+        let size = (width * height) as usize;
+        let tiles = parse_data_line(e, c, parser, tilesets, size)?;
 
         Ok(Self {
             width,

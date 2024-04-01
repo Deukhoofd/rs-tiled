@@ -1,7 +1,7 @@
+use quick_xml::events::attributes::Attributes;
 use std::collections::HashMap;
 
-use xml::attribute::OwnedAttribute;
-
+use crate::util::{parse_cow, to_owned_str};
 use crate::{
     error::Error,
     properties::{parse_properties, Color, Properties},
@@ -26,17 +26,17 @@ pub struct WangColor {
 
 impl WangColor {
     /// Reads data from XML parser to create a WangColor.
-    pub fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: Vec<OwnedAttribute>,
+    pub fn new<'a>(
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
+        attrs: Attributes,
     ) -> Result<WangColor> {
         // Get common data
         let (name, color, tile, probability) = get_attrs!(
             for v in attrs {
-                "name" => name ?= v.parse::<String>(),
-                "color" => color ?= v.parse(),
-                "tile" => tile ?= v.parse::<i64>(),
-                "probability" => probability ?= v.parse::<f32>(),
+                "name" => name ?= to_owned_str(&v),
+                "color" => color ?= parse_cow(&v),
+                "tile" => tile ?= parse_cow::<i64>(&v),
+                "probability" => probability ?= parse_cow::<f32>(&v),
             }
             (name, color, tile, probability)
         );

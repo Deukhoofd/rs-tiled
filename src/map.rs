@@ -1,9 +1,9 @@
 //! Structures related to Tiled maps.
 
+use quick_xml::events::attributes::Attributes;
 use std::{collections::HashMap, fmt, path::Path, str::FromStr, sync::Arc};
 
-use xml::attribute::OwnedAttribute;
-
+use crate::util::{parse_cow, to_owned_str};
 use crate::{
     error::{Error, Result},
     layers::{LayerData, LayerTag},
@@ -125,9 +125,9 @@ impl Map {
 }
 
 impl Map {
-    pub(crate) fn parse_xml(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: Vec<OwnedAttribute>,
+    pub(crate) fn parse_xml<'a>(
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
+        attrs: Attributes,
         map_path: &Path,
         reader: &mut impl ResourceReader,
         cache: &mut impl ResourceCache,
@@ -137,18 +137,18 @@ impl Map {
             (v, o, w, h, tw, th),
         ) = get_attrs!(
             for v in attrs {
-                Some("backgroundcolor") => colour ?= v.parse(),
-                Some("infinite") => infinite = v == "1",
-                Some("type") => user_type ?= v.parse(),
-                Some("class") => user_class ?= v.parse(),
-                Some("staggeraxis") => stagger_axis ?= v.parse::<StaggerAxis>(),
-                Some("staggerindex") => stagger_index ?= v.parse::<StaggerIndex>(),
-                "version" => version = v,
-                "orientation" => orientation ?= v.parse::<Orientation>(),
-                "width" => width ?= v.parse::<u32>(),
-                "height" => height ?= v.parse::<u32>(),
-                "tilewidth" => tile_width ?= v.parse::<u32>(),
-                "tileheight" => tile_height ?= v.parse::<u32>(),
+                Some("backgroundcolor") => colour ?= parse_cow(&v),
+                Some("infinite") => infinite ?= parse_cow(&v).map(|v: i32| v == 1),
+                Some("type") => user_type ?= parse_cow(&v),
+                Some("class") => user_class ?= parse_cow(&v),
+                Some("staggeraxis") => stagger_axis ?= parse_cow::<StaggerAxis>(&v),
+                Some("staggerindex") => stagger_index ?= parse_cow::<StaggerIndex>(&v),
+                "version" => version ?= to_owned_str(&v),
+                "orientation" => orientation ?= parse_cow::<Orientation>(&v),
+                "width" => width ?= parse_cow::<u32>(&v),
+                "height" => height ?= parse_cow::<u32>(&v),
+                "tilewidth" => tile_width ?= parse_cow::<u32>(&v),
+                "tileheight" => tile_height ?= parse_cow::<u32>(&v),
             }
             ((colour, infinite, user_type, user_class, stagger_axis, stagger_index), (version, orientation, width, height, tile_width, tile_height))
         );
@@ -166,8 +166,8 @@ impl Map {
         let mut tilesets = Vec::new();
 
         parse_tag!(parser, "map", {
-            "tileset" => |attrs: Vec<OwnedAttribute>| {
-                let res = Tileset::parse_xml_in_map(parser, &attrs, map_path,  reader, cache)?;
+            "tileset" => |attrs: Attributes| {
+                let res = Tileset::parse_xml_in_map(parser, attrs, map_path,  reader, cache)?;
                 match res.result_type {
                     EmbeddedParseResultType::ExternalReference { tileset_path } => {
                         let tileset = if let Some(ts) = cache.get_tileset(&tileset_path) {

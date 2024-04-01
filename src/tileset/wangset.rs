@@ -1,17 +1,16 @@
-use std::collections::HashMap;
-
-use xml::attribute::OwnedAttribute;
-
 use crate::{
     error::Error,
     properties::{parse_properties, Properties},
     util::{get_attrs, parse_tag, XmlEventResult},
     Result, TileId,
 };
+use quick_xml::events::attributes::Attributes;
+use std::collections::HashMap;
 
 mod wang_color;
 pub use wang_color::*;
 mod wang_tile;
+use crate::util::{parse_cow, to_owned_str};
 pub use wang_tile::*;
 
 /// Wang set's terrain brush connection type.
@@ -48,16 +47,16 @@ pub struct WangSet {
 
 impl WangSet {
     /// Reads data from XML parser to create a WangSet.
-    pub fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: Vec<OwnedAttribute>,
+    pub fn new<'a>(
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
+        attrs: Attributes,
     ) -> Result<WangSet> {
         // Get common data
         let (name, wang_set_type, tile) = get_attrs!(
             for v in attrs {
-                "name" => name ?= v.parse::<String>(),
-                "type" => wang_set_type ?= v.parse::<String>(),
-                "tile" => tile ?= v.parse::<i64>(),
+                "name" => name ?= to_owned_str(&v),
+                "type" => wang_set_type ?= to_owned_str(&v),
+                "tile" => tile ?= parse_cow::<i64>(&v),
             }
             (name, wang_set_type, tile)
         );

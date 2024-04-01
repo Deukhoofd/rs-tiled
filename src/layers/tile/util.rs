@@ -1,18 +1,21 @@
+use std::borrow::Cow;
+use std::ops::Deref;
 use std::{convert::TryInto, io::Read};
 
 use base64::Engine;
-use xml::reader::XmlEvent;
+use quick_xml::events::Event;
 
 use crate::{util::XmlEventResult, Error, LayerTileData, MapTilesetGid, Result};
 
-pub(crate) fn parse_data_line(
+pub(crate) fn parse_data_line<'a>(
     encoding: Option<String>,
     compression: Option<String>,
-    parser: &mut impl Iterator<Item = XmlEventResult>,
+    parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
     tilesets: &[MapTilesetGid],
+    size: usize,
 ) -> Result<Vec<Option<LayerTileData>>> {
     match (encoding.as_deref(), compression.as_deref()) {
-        (Some("csv"), None) => decode_csv(parser, tilesets),
+        (Some("csv"), None) => decode_csv(parser, tilesets, size),
 
         (Some("base64"), None) => parse_base64(parser).map(|v| convert_to_tiles(&v, tilesets)),
         (Some("base64"), Some("zlib")) => parse_base64(parser)
@@ -33,18 +36,19 @@ pub(crate) fn parse_data_line(
     }
 }
 
-fn parse_base64(parser: &mut impl Iterator<Item = XmlEventResult>) -> Result<Vec<u8>> {
+fn parse_base64<'a>(parser: &mut impl Iterator<Item = XmlEventResult<'a>>) -> Result<Vec<u8>> {
     for next in parser {
         match next.map_err(Error::XmlDecodingError)? {
-            XmlEvent::Characters(s) => {
+            Event::Text(s) => {
+                let s = String::from_utf8_lossy(s.deref());
                 return base64::engine::GeneralPurpose::new(
                     &base64::alphabet::STANDARD,
                     base64::engine::general_purpose::PAD,
                 )
-                .decode(s.trim().as_bytes())
-                .map_err(Error::Base64DecodingError)
+                .decode(s.as_bytes())
+                .map_err(Error::Base64DecodingError);
             }
-            XmlEvent::EndElement { name, .. } if name.local_name == "data" => {
+            Event::End(e) if e.name().local_name().as_ref() == "data".as_bytes() => {
                 return Ok(Vec::new());
             }
             _ => {}
@@ -63,21 +67,19 @@ fn process_decoder(decoder: std::io::Result<impl Read>) -> Result<Vec<u8>> {
         .map_err(Error::DecompressingError)
 }
 
-fn decode_csv(
-    parser: &mut impl Iterator<Item = XmlEventResult>,
+fn decode_csv<'a>(
+    parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
     tilesets: &[MapTilesetGid],
+    size: usize,
 ) -> Result<Vec<Option<LayerTileData>>> {
     for next in parser {
         match next.map_err(Error::XmlDecodingError)? {
-            XmlEvent::Characters(s) => {
-                let tiles = s
-                    .split(',')
-                    .map(|v| v.trim().parse().unwrap())
-                    .map(|bits| LayerTileData::from_bits(bits, tilesets))
-                    .collect();
+            Event::Text(s) => {
+                let s = String::from_utf8_lossy(s.deref());
+                let tiles = decode_csv_vec(s, size, tilesets);
                 return Ok(tiles);
             }
-            XmlEvent::EndElement { name, .. } if name.local_name == "data" => {
+            Event::End(e) if e.name().local_name().as_ref() == "data".as_bytes() => {
                 return Ok(Vec::new());
             }
             _ => {}
@@ -93,4 +95,29 @@ fn convert_to_tiles(data: &[u8], tilesets: &[MapTilesetGid]) -> Vec<Option<Layer
             LayerTileData::from_bits(bits, tilesets)
         })
         .collect()
+}
+
+fn decode_csv_vec(
+    input: Cow<'_, str>,
+    size: usize,
+    tilesets: &[MapTilesetGid],
+) -> Vec<Option<LayerTileData>> {
+    let mut vec = Vec::with_capacity(size);
+    let mut current = 0;
+    for c in input.chars() {
+        match c {
+            ',' => {
+                let tile = LayerTileData::from_bits(current, tilesets);
+                vec.push(tile);
+                current = 0;
+            }
+            '0'..='9' => {
+                current *= 10;
+                current += c as u32 - '0' as u32;
+            }
+            _ => {}
+        }
+    }
+    vec.push(LayerTileData::from_bits(current, tilesets));
+    vec
 }

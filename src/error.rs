@@ -13,7 +13,7 @@ pub enum Error {
     /// An error occured when decoding a base64 encoded dataset.
     Base64DecodingError(base64::DecodeError),
     /// An error occured when parsing a XML file, such as a TMX or TSX file.
-    XmlDecodingError(xml::reader::Error),
+    XmlDecodingError(quick_xml::Error),
     /// The XML stream ended before the document was fully parsed.
     PrematureEnd(String),
     /// The path given is invalid because it isn't contained in any folder.

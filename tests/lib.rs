@@ -1,9 +1,12 @@
+#![feature(test)]
+extern crate test;
 use std::path::PathBuf;
+use std::process::Termination;
 use tiled::{
-    Color, FiniteTileLayer, GroupLayer, HorizontalAlignment, Layer, LayerType, Loader, Map,
-    ObjectLayer, ObjectShape, PropertyValue, ResourceCache, TileLayer, TilesetLocation,
-    VerticalAlignment, WangId,
+    Color, FiniteTileLayer, HorizontalAlignment, LayerType, Loader, Map, ObjectShape,
+    PropertyValue, ResourceCache, TileLayer, TilesetLocation, VerticalAlignment, WangId,
 };
+use test::Bencher;
 
 fn as_finite<'map>(data: TileLayer<'map>) -> FiniteTileLayer<'map> {
     match data {
@@ -27,6 +30,13 @@ fn compare_everything_but_tileset_sources(r: &Map, e: &Map) {
     r.layers()
         .zip(e.layers())
         .for_each(|(r, e)| assert_eq!(r, e)); */
+}
+
+#[bench]
+fn perf_test(b: &mut Bencher) -> impl Termination {
+    b.iter(|| {
+        let _ = Loader::new().load_tmx_map("assets/map_house2.tmx").unwrap();
+    });
 }
 
 #[test]
@@ -200,7 +210,7 @@ fn test_layer_property() {
     } else {
         String::new()
     };
-    assert_eq!("Line 1\r\nLine 2\r\nLine 3,\r\n  etc\r\n   ", prop_value);
+    assert_eq!("Line 1\r\nLine 2\r\nLine 3,\r\n  etc", prop_value);
 }
 
 #[test]

@@ -1,7 +1,6 @@
+use quick_xml::events::attributes::Attributes;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-
-use xml::attribute::OwnedAttribute;
 
 use crate::error::{Error, Result};
 use crate::image::Image;
@@ -110,14 +109,14 @@ impl Tileset {
 }
 
 impl Tileset {
-    pub(crate) fn parse_xml_in_map(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: &[OwnedAttribute],
+    pub(crate) fn parse_xml_in_map<'a>(
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
+        attrs: Attributes,
         path: &Path, // Template or Map file
         reader: &mut impl ResourceReader,
         cache: &mut impl ResourceCache,
     ) -> Result<EmbeddedParseResult> {
-        Tileset::parse_xml_embedded(parser, attrs, path, reader, cache).or_else(|err| {
+        Tileset::parse_xml_embedded(parser, attrs.clone(), path, reader, cache).or_else(|err| {
             if matches!(err, Error::MalformedAttributes(_)) {
                 Tileset::parse_xml_reference(attrs, path)
             } else {
@@ -126,9 +125,9 @@ impl Tileset {
         })
     }
 
-    fn parse_xml_embedded(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: &[OwnedAttribute],
+    fn parse_xml_embedded<'a>(
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
+        attrs: Attributes,
         path: &Path, // Template or Map file
         reader: &mut impl ResourceReader,
         cache: &mut impl ResourceCache,
@@ -138,17 +137,17 @@ impl Tileset {
             (tilecount, first_gid, tile_width, tile_height),
         ) = get_attrs!(
            for v in attrs {
-            Some("spacing") => spacing ?= v.parse(),
-            Some("margin") => margin ?= v.parse(),
-            Some("columns") => columns ?= v.parse(),
-            Some("name") => name = v,
-            Some("type") => user_type ?= v.parse(),
-            Some("class") => user_class ?= v.parse(),
+            Some("spacing") => spacing ?= parse_cow(&v),
+            Some("margin") => margin ?= parse_cow(&v),
+            Some("columns") => columns ?= parse_cow(&v),
+            Some("name") => name ?= to_owned_str(&v),
+            Some("type") => user_type ?= parse_cow(&v),
+            Some("class") => user_class ?= parse_cow(&v),
 
-            "tilecount" => tilecount ?= v.parse::<u32>(),
-            "firstgid" => first_gid ?= v.parse::<u32>().map(Gid),
-            "tilewidth" => tile_width ?= v.parse::<u32>(),
-            "tileheight" => tile_height ?= v.parse::<u32>(),
+            "tilecount" => tilecount ?= parse_cow::<u32>(&v),
+            "firstgid" => first_gid ?= parse_cow::<u32>(&v).map(Gid),
+            "tilewidth" => tile_width ?= parse_cow::<u32>(&v),
+            "tileheight" => tile_height ?= parse_cow::<u32>(&v),
            }
            ((spacing, margin, columns, name, user_type, user_class), (tilecount, first_gid, tile_width, tile_height))
         );
@@ -177,14 +176,11 @@ impl Tileset {
         })
     }
 
-    fn parse_xml_reference(
-        attrs: &[OwnedAttribute],
-        map_path: &Path,
-    ) -> Result<EmbeddedParseResult> {
+    fn parse_xml_reference(attrs: Attributes, map_path: &Path) -> Result<EmbeddedParseResult> {
         let (first_gid, source) = get_attrs!(
             for v in attrs {
-                "firstgid" => first_gid ?= v.parse::<u32>().map(Gid),
-                "source" => source = v,
+                "firstgid" => first_gid ?= parse_cow::<u32>(&v).map(Gid),
+                "source" => source ?= to_owned_str(&v),
             }
             (first_gid, source)
         );
@@ -197,9 +193,9 @@ impl Tileset {
         })
     }
 
-    pub(crate) fn parse_external_tileset(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: &[OwnedAttribute],
+    pub(crate) fn parse_external_tileset<'a>(
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
+        attrs: Attributes,
         path: &Path,
         reader: &mut impl ResourceReader,
         cache: &mut impl ResourceCache,
@@ -209,16 +205,16 @@ impl Tileset {
             (tilecount, tile_width, tile_height),
         ) = get_attrs!(
             for v in attrs {
-                Some("spacing") => spacing ?= v.parse(),
-                Some("margin") => margin ?= v.parse(),
-                Some("columns") => columns ?= v.parse(),
-                Some("name") => name = v,
-                Some("type") => user_type ?= v.parse(),
-                Some("class") => user_class ?= v.parse(),
+                Some("spacing") => spacing ?= parse_cow(&v),
+                Some("margin") => margin ?= parse_cow(&v),
+                Some("columns") => columns ?= parse_cow(&v),
+                Some("name") => name ?= to_owned_str(&v),
+                Some("type") => user_type ?= parse_cow(&v),
+                Some("class") => user_class ?= parse_cow(&v),
 
-                "tilecount" => tilecount ?= v.parse::<u32>(),
-                "tilewidth" => tile_width ?= v.parse::<u32>(),
-                "tileheight" => tile_height ?= v.parse::<u32>(),
+                "tilecount" => tilecount ?= parse_cow(&v),
+                "tilewidth" => tile_width ?= parse_cow(&v),
+                "tileheight" => tile_height ?= parse_cow(&v),
             }
             ((spacing, margin, columns, name, user_type, user_class), (tilecount, tile_width, tile_height))
         );
@@ -243,8 +239,8 @@ impl Tileset {
         )
     }
 
-    fn finish_parsing_xml(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
+    fn finish_parsing_xml<'a>(
+        parser: &mut impl Iterator<Item = XmlEventResult<'a>>,
         prop: TilesetProperties,
         reader: &mut impl ResourceReader,
         cache: &mut impl ResourceCache,
@@ -332,11 +328,11 @@ impl Tileset {
 }
 
 /// Parse the optional <tileoffset x=... y=.../> tag.
-fn parse_tileoffset(attrs: Vec<OwnedAttribute>) -> Result<(i32, i32)> {
+fn parse_tileoffset(attrs: Attributes) -> Result<(i32, i32)> {
     Ok(get_attrs!(
         for v in attrs {
-            "x" => offset_x ?= v.parse::<i32>(),
-            "y" => offset_y ?= v.parse::<i32>(),
+            "x" => offset_x ?= parse_cow::<i32>(&v),
+            "y" => offset_y ?= parse_cow::<i32>(&v),
         }
         (offset_x, offset_y)
     ))
